@@ -75,6 +75,7 @@ List<ServiceTicket> serviceTickets = new List<HoneyRaesAPI.Models.ServiceTicket>
     {
         Id = 3,
         CustomerId = 1,
+        EmployeeId = 2,
         Description = "'Tis but a scratch",
         Emergency = false,
     },
@@ -82,7 +83,7 @@ List<ServiceTicket> serviceTickets = new List<HoneyRaesAPI.Models.ServiceTicket>
     {
         Id = 4,
         CustomerId = 2,
-        EmployeeId = 1,
+        EmployeeId = 3,
         Description = "Code Red",
         Emergency = true,
         DateCompleted = new DateTime(2022,12,20)
@@ -91,7 +92,7 @@ List<ServiceTicket> serviceTickets = new List<HoneyRaesAPI.Models.ServiceTicket>
     {
         Id = 5,
         CustomerId = 2,
-        EmployeeId = 2,
+        EmployeeId = null,
         Description = "Checkup",
         Emergency = false,
 
@@ -115,11 +116,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
 
 app.MapGet("/servicetickets", () =>
 {
@@ -200,7 +196,109 @@ app.MapPost("/servicetickets/{id}/complete", (int id) =>
 {
     ServiceTicket ticketToComplete = serviceTickets.FirstOrDefault(st => st.Id == id);
     ticketToComplete.DateCompleted = DateTime.Today;
-    return Results.Ok("Ticket marked complete");
+    return Results.Ok("This ticket is now completed");
+});
+
+app.MapGet("/servicetickets/incompleteEmergencies", () =>
+{
+    List<ServiceTicket> IncompleteEmergencies = serviceTickets.Where(st => st.DateCompleted == DateTime.MinValue && st.Emergency == true).ToList();
+    if (IncompleteEmergencies.Count == 0)
+    {
+        return Results.NotFound("No emergencies found");
+    }
+    return Results.Ok(IncompleteEmergencies);
+});
+
+app.MapGet("/servicetickets/unassigned", () =>
+{
+    List<ServiceTicket> UnassignedTickets = serviceTickets.Where(st => st.EmployeeId == null).ToList();
+    if (UnassignedTickets.Count == 0)
+    {
+        return Results.NotFound("All tickets have been assigned");
+    }
+    return Results.Ok(UnassignedTickets);
+}
+);
+
+app.MapGet("/customer/inactive", () =>
+{
+    List<Customer> inactiveCustomers = customers.Where(c => serviceTickets.Any(st => st.CustomerId == c.Id && (st.DateCompleted == DateTime.MinValue || st.DateCompleted == DateTime.Now.AddYears(-1)))).ToList();
+
+    if (inactiveCustomers != null)
+    {
+        return Results.Ok(inactiveCustomers);
+    }
+    else
+    {
+        return Results.NotFound();
+    }
+});
+
+app.MapGet("/employee/available", () =>
+{
+    List<Employee> unassignedEmployees = employees.Where(e => !serviceTickets.Any(st => st.EmployeeId == e.Id && st.DateCompleted == DateTime.MinValue)).ToList();
+    return unassignedEmployees;
+
+});
+
+app.MapGet("/customer/inactive", () =>
+{
+    List<Customer> inactiveCustomers = customers.Where(c => serviceTickets.Any(st => st.CustomerId == c.Id && (st.DateCompleted == DateTime.MinValue || st.DateCompleted == DateTime.Now.AddYears(-1)))).ToList();
+
+    if (inactiveCustomers != null)
+    {
+        return Results.Ok(inactiveCustomers);
+    }
+    else
+    {
+        return Results.NotFound();
+    }
+});
+
+app.MapGet("/employee/{id}/customers", (int id) =>
+{
+
+    Employee employee = employees.FirstOrDefault(e => e.Id == id);
+
+    if (employee == null)
+    {
+        return Results.NotFound("Employee not found");
+    }
+
+    List<ServiceTicket> employeeServiceTickets = serviceTickets.Where(st => st.EmployeeId == id).ToList();
+
+    if (employeeServiceTickets.Count == 0)
+    {
+        return Results.Ok("This employee has no customers.");
+    }
+
+    List<int> customerIds = employeeServiceTickets.Select(st => st.CustomerId).Distinct().ToList();
+
+    List<Customer> customersAssignedToEmployee = customers.Where(c => customerIds.Contains(c.Id)).ToList();
+
+    return Results.Ok(customersAssignedToEmployee);
+});
+
+
+app.MapGet("/employee/topEmployee", () =>
+{
+    DateTime lastMonth = DateTime.Now.AddMonths(-1);
+    Employee employeeOfMonth = employees.OrderByDescending(e => serviceTickets.Count(st => st.EmployeeId == e.Id && st.DateCompleted.HasValue && st.DateCompleted.Value.Month == lastMonth.Month)).FirstOrDefault();
+
+    return Results.Ok(employeeOfMonth);
+});
+
+app.MapGet("/servicetickets/review", () =>
+{
+    List<ServiceTicket> completedTickets = serviceTickets.Where(st => st.DateCompleted.HasValue).OrderBy(st => st.DateCompleted).ToList();
+
+    foreach (var ticket in completedTickets)
+    {
+        ticket.Customer = customers.FirstOrDefault(c => c.Id == ticket.CustomerId);
+        ticket.Employee = employees.FirstOrDefault(e => e.Id == ticket.EmployeeId);
+    }
+
+    return Results.Ok(completedTickets);
 });
 
 app.Run();
